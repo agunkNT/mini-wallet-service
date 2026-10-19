@@ -1,0 +1,3 @@
+CREATE USER wallet WITH SUPERUSER PASSWORD 'wallet';
+CREATE DATABASE wallet OWNER wallet;
+CREATE DATABASE wallet_test OWNER wallet;
