@@ -1,10 +1,10 @@
 # TASK: Backend Lead Take-Home Challenge (99Tech / S5 Tech)
 
 ## 📌 Context & Objective
-Membangun platform transaksional uang riil (regulated, real-money transactional platform) yang menangani deposit, wager (taruhan), dan withdrawal dengan jaminan integritas uang (**money correctness**) yang absolut.
-- Time Budget: ~4 jam (~3 jam coding + 45 menit design note).
+Build a regulated, real-money transactional platform handling deposits, wagers, and withdrawals with absolute **money correctness** guarantees.
+- Time Budget: ~4 hours (~3 hours coding + 45 minutes design note).
 - Stack: TypeScript, Express, Sequelize, PostgreSQL, Jest, Docker.
-- Konvensi: Money never touches JS `number` (menggunakan `bignumber.js` dan string di API boundary). DB transactions untuk multi-table writes.
+- Conventions: Money never touches JS `number` (using `bignumber.js` and strings at API boundaries). DB transactions for multi-table writes.
 
 ---
 
@@ -14,37 +14,37 @@ Membangun platform transaksional uang riil (regulated, real-money transactional 
 
 1. **A1. Create a Deposit (`POST /deposits`)**
    - Payload: `{ "memberId": "<uuid>", "amount": "100.50", "turnoverMultiplier": 1 }`
-   - Validasi: `amount` string desimal positif, `turnoverMultiplier` integer >= 0 (default 1).
-   - Action: Buat funding transaction dengan state `Pending`, generate `pspRef` yang unik. Belum ada pergerakan saldo wallet.
-   - Response: `201 Created` dengan transaction id dan `pspRef`.
+   - Validation: `amount` positive decimal string, `turnoverMultiplier` integer >= 0 (default 1).
+   - Action: Create a funding transaction with status `Pending`, generate a unique `pspRef`. No wallet balance changes yet.
+   - Response: `201 Created` with transaction id and `pspRef`.
 
 2. **A2. Handle PSP Callback (`POST /psp/callbacks`)**
    - Webhook payload: `{ "pspRef": "<ref>", "status": "completed"|"failed", "amount": "100.50" }`
    - Hostile Infrastructure Concerns:
-     - **Idempotency (Sequential)**: Callback duplikat tidak boleh menambah saldo 2x.
-     - **Concurrency (Parallel requests)**: Dua callback dengan `pspRef` sama yang tiba bersamaan harus ditangani secara aman (database row lock / unique constraint / distributed lock). Tepat 1 yang berhasil meng-credit.
-     - **Amount mismatch handling**: Jika `amount` callback berbeda dengan deposit asli, tentukan kebijakan (misal: reject atau update berdasarkan business rule, dokumentasikan di `DECISIONS.md`).
-     - **Unknown pspRef**: Return `404 Not Found` secara terukur.
+     - **Idempotency (Sequential)**: Duplicate callbacks must never double-credit the wallet.
+     - **Concurrency (Parallel requests)**: Concurrent callbacks with the same `pspRef` arriving simultaneously must be safely handled (database row locks / unique constraint). Exactly 1 request succeeds in crediting.
+     - **Amount mismatch handling**: If callback amount differs from the original deposit, apply strict policy (e.g., reject, mark failed, document in `DECISIONS.md`).
+     - **Unknown pspRef**: Return `404 Not Found`.
    - Requirements:
-     - Wallet dikredit **tepat 1 kali (exactly once)**.
-     - Tulis append-only ledger (`wallet_txs` / transactions log) sehingga saldo selalu dapat direkonstruksi.
-     - Funding transaction transisi status: `Pending -> Completed / Failed`. Tolak transisi invalid (state machine enforcement).
+     - Wallet credited **exactly once**.
+     - Write to append-only ledger (`wallet_txs` / transactions log) ensuring balance is always mathematically reconstructible.
+     - Funding transaction status transition: `Pending -> Completed / Failed`. Reject invalid state transitions.
 
 3. **A3. Record Wagers (`POST /wallets/:walletId/wagers`)**
    - Payload: `{ "amount": "10.00" }`
-   - Action: Debit wallet (reject dengan `422/400` jika saldo tidak cukup).
-   - Accrue turnover (menambah total turnover yang sudah dimainkan).
-   - Concurrency: Dua wager bersamaan tidak boleh menyebabkan saldo negatif (overdraw protection menggunakan `SELECT ... FOR UPDATE` atau conditional update).
-   - Tulis ledger entry.
+   - Action: Debit wallet (reject with `422/400` if balance is insufficient).
+   - Accrue turnover (increment total turnover played).
+   - Concurrency: Concurrent wagers must never cause a negative balance (overdraw protection via `SELECT ... FOR UPDATE`).
+   - Write ledger entry.
 
 4. **A4. Withdrawals with Turnover Lock (`POST /withdrawals`)**
    - Payload: `{ "memberId": "<uuid>", "amount": "50.00" }`
    - Business Rule (Anti-Abuse):
-     - Setiap deposit yang selesai (`Completed`) menambah **turnover requirement** = `amount * turnoverMultiplier`.
-     - Setiap wager menambah **accrued turnover** = `wager amount`.
-     - Withdrawal HANYA diizinkan jika **accrued turnover >= total required turnover**.
-     - Jika belum cukup: return `422 Unprocessable Entity` dengan rincian sisa turnover yang belum terpenuhi.
-   - Jika valid: debit wallet seketika, catat ledger entry, dan buat funding transaction berstatus `Pending`.
+     - Each completed deposit adds **turnover requirement** = `amount * turnoverMultiplier`.
+     - Each wager adds **accrued turnover** = `wager amount`.
+     - Withdrawal is ONLY permitted if **accrued turnover >= total required turnover**.
+     - If requirement not met: return `422 Unprocessable Entity` with remaining turnover details.
+   - If valid: debit wallet immediately, record ledger entry, and create a funding transaction with status `Pending`.
 
 5. **A5. Test Suite (Jest)**
    - Minimal Test Scenarios:
@@ -57,8 +57,8 @@ Membangun platform transaksional uang riil (regulated, real-money transactional 
 ---
 
 ### Part B: Design Note - The 50th PSP (`DESIGN-PSP.md`) (~45 min)
-- Topik: *"How would you structure this codebase so that integrating a new PSP is a one-day task safely done by a junior engineer?"*
-- Pembahasan:
+- Topic: *"How would you structure this codebase so that integrating a new PSP is a one-day task safely done by a junior engineer?"*
+- Scope:
   - Abstraction & Provider Interface (`PSPAdapter`).
   - Request/Webhook verification & payload normalization.
   - Configuration-driven architecture.
@@ -68,7 +68,7 @@ Membangun platform transaksional uang riil (regulated, real-money transactional 
 ---
 
 ### Deliverables Checklist
-- [ ] Codebase working under `src/` (models, migrations, services, routes).
-- [ ] Comprehensive test suite under `test/`.
-- [ ] `DECISIONS.md` (Design choices, concurrency locking strategy, assumptions, trade-offs, AI disclosure).
-- [ ] `DESIGN-PSP.md` (Part B architecture write-up).
+- [x] Codebase working under `src/` (models, migrations, services, routes).
+- [x] Comprehensive test suite under `test/`.
+- [x] `DECISIONS.md` (Design choices, concurrency locking strategy, assumptions, trade-offs, AI disclosure).
+- [x] `DESIGN-PSP.md` (Part B architecture write-up).
